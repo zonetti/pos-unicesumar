@@ -1,9 +1,11 @@
 <?php
+
 use Silex\Application;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\Request;
 
 //loader do Composer
+
 $loader = require_once __DIR__.'/vendor/autoload.php';
 
 $db = new PDO('sqlite:beers.db');
@@ -11,7 +13,7 @@ $app = new Application();
 $app['debug'] = true;
 
 $app->register(new Silex\Provider\TwigServiceProvider(), array(
-    'twig.path' => __DIR__.'/views',
+    'twig.path' => __DIR__ . '/views',
 ));
 
 $cervejas = array(
@@ -25,53 +27,67 @@ $app->get('/estilo', function () use ($cervejas, $app) {
 
 $app->get('/cerveja/{id}', function ($id) use ($cervejas, $app) {
     if ($id == null) {
-       return new Response(implode(',', $cervejas['marcas']), 200);
+        return new Response(implode(',', $cervejas['marcas']), 200);
     }
-    
     $key = array_search($id, $cervejas['marcas']);
-    if (!$key) {
+    if ($key === false) {
         return new Response('Não encontrado', 404);
     }
     return new Response($cervejas['marcas'][$key], 200);
-
 })->value('id', null);
 
 $app->post('/cerveja', function (Request $request) use ($app, $db) {
-	$db->exec(
-		"create table if not exists beer (id INTEGER PRIMARY KEY AUTOINCREMENT, name text not null, style text not null)"
-	);
-	if (!$request->get('name') || !$request->get('style')) {
+    $db->exec(
+        'create table if not exists beer (id INTEGER PRIMARY KEY AUTOINCREMENT, name text not null, style text not null)'
+    );
+    if (!$request->get('name') || !$request->get('style')) {
         return new Response('Faltam parâmetros', 400);
     }
     $cerveja = [
-    	'name'  => $request->get('name'),
-    	'style' => $request->get('style')
+        'name'  => $request->get('name'),
+        'style' => $request->get('style')
     ];
-    
     $stmt = $db->prepare('insert into beer (name, style) values (:name, :style)');
-    $stmt->bindParam(':name',$cerveja['name']);
+    $stmt->bindParam(':name', $cerveja['name']);
     $stmt->bindParam(':style', $cerveja['style']);
     $stmt->execute();
     $cerveja['id'] = $db->lastInsertId();
-
     return $cerveja;
-
 });
 
 $app->put('/cerveja/{id}', function (Request $request, $id) use ($app) {
-    
+    if ($id == null) {
+        return new Response('Não encontrado', 404);
+    }
+    if (!$request->get('name') && !$request->get('style')) {
+        return new Response('Faltam parâmetros', 400);
+    }
+    $stmt = $db->prepare('update beer set name=:name, style=:style where id=:id');
+    if ($request->get('name')) {
+        $stmt->bindParam(':name', $request->get('name'), PDO::PARAM_STR);
+    }
+    if ($request->get('style')) {
+        $stmt->bindParam(':style', $request->get('style'), PDO::PARAM_STR);
+    }
+    $stmt->bindParam(':id', $id, PDO::PARAM_INT);
+    $stmt->execute();
+    return Response('Cerveja atualizada com sucesso');
 });
 
 $app->delete('/cerveja/{id}', function (Request $request, $id) use ($app) {
-   
+    if ($id == null) {
+        return new Response('Não encontrado', 404);
+    }
+    $stmt = $db->prepare('delete from beer where id=:id');
+    $stmt->bindParam(':id', $id, PDO::PARAM_INT);
+    $stmt->execute();
+    return Response('Cerveja excluída com sucesso');
 });
 
-
 $app->before(function (Request $request) use ($app) {
-    if( ! $request->headers->has('authorization')){
+    if (!$request->headers->has('authorization')) {
         return new Response('Unauthorized', 401);
     }
-
     $clients = require_once 'config/clients.php';
     if (!in_array($request->headers->get('authorization'), array_keys($clients))) {
         return new Response('Unauthorized', 401);
@@ -79,20 +95,16 @@ $app->before(function (Request $request) use ($app) {
 });
 
 $app->after(function (Request $request, Response $response) use ($app) {
-	$content = explode(',', $response->getContent());
-
-	if ($request->headers->get('accept') == 'text/json') {
-		$response->headers->set('Content-Type', 'text/json');
-		$response->setContent(json_encode($content));
-	}
-
-	if ($request->headers->get('accept') == 'text/html') {
-		$content = $app['twig']->render('content.twig', array('content' => $content));
-		$response->setContent($content);
-	}
-
-	return $response;
+    $content = explode(',', $response->getContent());
+    if ($request->headers->get('accept') == 'text/json') {
+        $response->headers->set('Content-Type', 'text/json');
+        $response->setContent(json_encode($content));
+    }
+    if ($request->headers->get('accept') == 'text/html') {
+        $content = $app['twig']->render('content.twig', array('content' => $content));
+        $response->setContent($content);
+    }
+    return $response;
 });
-
 
 $app->run();
