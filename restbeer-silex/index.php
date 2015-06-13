@@ -4,8 +4,6 @@ use Silex\Application;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\Request;
 
-//loader do Composer
-
 $loader = require_once __DIR__.'/vendor/autoload.php';
 
 $db = new PDO('sqlite:beers.db');
@@ -16,24 +14,27 @@ $app->register(new Silex\Provider\TwigServiceProvider(), array(
     'twig.path' => __DIR__ . '/views',
 ));
 
-$cervejas = array(
-    'marcas' => array('Heineken', 'Guinness', 'Skol', 'Colorado'),
-    'estilos' => array('Pilsen' , 'Stout')
-);
+$estilos = array('Pilsen' , 'Stout');
 
-$app->get('/estilo', function () use ($cervejas, $app) {
-    return new Response(implode(',', $cervejas['estilos']), 200);
+$app->get('/estilo', function () use ($estilos, $app) {
+    return new Response(implode(',', $estilos), 200);
 });
 
-$app->get('/cerveja/{id}', function ($id) use ($cervejas, $app) {
+$app->get('/cerveja/{id}', function ($id) use ($app, $db) {
     if ($id == null) {
-        return new Response(implode(',', $cervejas['marcas']), 200);
+        $stmt = $db->prepare('select * from beer');
+        $stmt->execute();
+        $cervejas = $stmt->fetchAll(PDO:FETCH_ASSOC);
+        return new Response(json_encode($cervejas));
     }
-    $key = array_search($id, $cervejas['marcas']);
-    if ($key === false) {
+    $stmt = $db->prepare('select * from beer where id=:id');
+    $stmt->bindParam(':id', $id);
+    $stmt->execute();
+    $cervejas = $stmt->fetchAll(PDO:FETCH_ASSOC);
+    if (count($cervejas) === 0) {
         return new Response('Não encontrado', 404);
     }
-    return new Response($cervejas['marcas'][$key], 200);
+    return new Response(json_encode($cervejas[0]));
 })->value('id', null);
 
 $app->post('/cerveja', function (Request $request) use ($app, $db) {
@@ -52,7 +53,7 @@ $app->post('/cerveja', function (Request $request) use ($app, $db) {
     $stmt->bindParam(':style', $cerveja['style']);
     $stmt->execute();
     $cerveja['id'] = $db->lastInsertId();
-    return $cerveja;
+    return new Response($cerveja['id']);
 });
 
 $app->put('/cerveja/{id}', function (Request $request, $id) use ($app) {
@@ -64,10 +65,12 @@ $app->put('/cerveja/{id}', function (Request $request, $id) use ($app) {
     }
     $stmt = $db->prepare('update beer set name=:name, style=:style where id=:id');
     if ($request->get('name')) {
-        $stmt->bindParam(':name', $request->get('name'), PDO::PARAM_STR);
+        $name = $request->get('name');
+        $stmt->bindParam(':name', $name, PDO::PARAM_STR);
     }
     if ($request->get('style')) {
-        $stmt->bindParam(':style', $request->get('style'), PDO::PARAM_STR);
+        $style = $request->get('style');
+        $stmt->bindParam(':style', $style, PDO::PARAM_STR);
     }
     $stmt->bindParam(':id', $id, PDO::PARAM_INT);
     $stmt->execute();
